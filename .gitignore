@@ -6,3 +6,4 @@ clientapp
 CMakeLists.txt
 get_server_ex.c
 get_client_ex.c
+.idea
