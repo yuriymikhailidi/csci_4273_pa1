@@ -1,0 +1,6 @@
+clientapp.dSYM
+serverapp.dSYM
+cmake-build-debug
+serverapp
+clientapp
+CMakeLists.txt

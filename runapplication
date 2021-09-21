@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# Clear all the clients and servers
+killall serverapp clientapp
+
+# Clear all the files
+make clean
+
+# Make all files
+make all
+
+#run the server
+./serverapp 5001&
+
+#run the client
+./clientapp localhost 5001
+
