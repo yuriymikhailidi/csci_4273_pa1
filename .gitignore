@@ -4,6 +4,6 @@ cmake-build-debug
 serverapp
 clientapp
 CMakeLists.txt
-get_server_ex.c
-get_client_ex.c
+udp_client_old.c
+udp_server_old.c
 .idea

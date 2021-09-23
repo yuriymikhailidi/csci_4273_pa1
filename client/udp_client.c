@@ -10,20 +10,12 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
-#include <readline/readline.h>
-#include <dirent.h>
-#include <stdbool.h>
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "EndlessLoop"
 #define BUFSIZE 1024
-#define MAXBUFLEN 64000
-#define nofile "File Not Found!"
 
-
-const char * creatFilePath(char *const *fileName);
-
-/*
+/* 
  * error - wrapper for perror
  */
 void error(char *msg) {
@@ -31,51 +23,27 @@ void error(char *msg) {
     exit(0);
 }
 
-void writeBufToFile(char* path, char* buf, int bufSize){
-    /* Write */
-    FILE* pFile = NULL;
-    pFile = fopen(path,"wb");
-
-    if (pFile){
-        fwrite(buf,1, bufSize, pFile);
-        printf("Client wrote to buf\n");
-    }
-    else{
-        printf("Client could not write buf to File\n");
-    }
-    fclose(pFile);
-
-}
-
-/*from butter to FILE* */
-/*https://stackoverflow.com/questions/27213419/fread-in-c-not-reading-the-complete-file?rq=1*/
-FILE* readFileToBuf(char* path, char* buf, int bufSize){
-    /* Read */
-    FILE* pFile = NULL;
-    pFile = fopen(path, "rb");
-    int nread;
-    /* write as many as you read */
-    while(nread = fread(buf, 100, bufSize, pFile) > 0) {
-        fwrite(buf, 10, nread, pFile);
-        fflush(pFile);
-    }
-
-    return pFile;
-
+/* This function builds the path to open file */
+const char *creatFilePath(char *fileName) {
+    char *TARGETDIR = "./client/";
+    char tempPath[100];
+    strcpy(tempPath, TARGETDIR);
+    strcat(tempPath, fileName);
+    return tempPath;
 }
 
 int main(int argc, char **argv) {
-    int sockfd, portno, commandTransfer, i = 0, fileTransfer, fileNameTransfer;
+    int sockfd, portno, sendToBytes, bytesSent, bytesRead,
+            j, s, bytesReceived, fileBufferBytes, fileSizeReceiver, lsDirReceiver, deleteIndicator;
     int serverlen;
     struct sockaddr_in serveraddr;
     struct hostent *server;
     char *hostname;
-    char buf[BUFSIZE];
-    char* command[BUFSIZE];/* command string */
-    char* fileName[BUFSIZE];/*filename string*/
-    FILE* fp = NULL;
-    char* fileSourceBuffer[MAXBUFLEN];
-    char path[100];
+    char buf[BUFSIZE], command[BUFSIZE], fileName[BUFSIZE],
+                path[BUFSIZE], fileStorage[BUFSIZE], lsString[BUFSIZE], deleteMessage[BUFSIZE];
+    FILE *filePointer = NULL;
+    size_t  fileSize;
+
 
     /* check command line arguments */
     if (argc != 3) {
@@ -104,108 +72,173 @@ int main(int argc, char **argv) {
           (char *) &serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
 
-    while(1) {
-
-            /* get a message from the user */
-            bzero(buf, BUFSIZE);
-            printf("Enter get <filename>, put <filename>, delete <filename>, ls or exit: ");
-            fgets(buf, BUFSIZE, stdin);
-            buf[strcspn(buf, "\r\n")] = 0;
-            buf[strcspn(buf, "\0")] = 0;
-
-            char* ptr = strtok(buf, " ");
-            char** parsedInput = NULL;
-            int n_spaces = 0, i = 0;
-
-            /*Reference code: https://stackoverflow.com/questions/11198604/c-split-string-into-an-array-of-strings */
-            /* This snipet of code allows to  /
-
-            /* split string and append tokens to 'res' */
-            while(ptr){
-                parsedInput = realloc(parsedInput, sizeof (char* ) * n_spaces++);
-
-                if(parsedInput == NULL)
-                    exit(-1);
-
-                parsedInput[n_spaces - 1] = ptr;
-
-                ptr = strtok(NULL, " ");
-            }
-            /* realloc one extra element for the last NULL */
-            parsedInput = realloc(parsedInput, sizeof (char *) * n_spaces + 1);
-            parsedInput[n_spaces] = 0;
-
-            /*Copy command from input*/
-            strcpy(command, parsedInput[0]);
-
-
-
-            /* Copy filename if not null from input*/
-            if(parsedInput[1] != NULL)
-                strcpy(fileName, parsedInput[1]);
-
-//            if((strcmp(command, "exit") == 0) || (strcmp(command, "ls") == 0))
-//                strcpy(fileName, "cmd exit or ls");
+    /* get a message from the user */
+    while (1) {
+        /* get a message from the user */
+        bzero(buf, BUFSIZE);
+        printf("Enter get <filename>, put <filename>, delete <filename>, ls or exit:");
+        fgets(buf, BUFSIZE, stdin);
+        buf[strcspn(buf, "\r\n")] = 0;
+        sscanf(buf, "%s %s", command, fileName);
 
         /* send the message to the server */
-            serverlen = sizeof(serveraddr);
-            commandTransfer = sendto(sockfd, command, strlen(command), 0, &serveraddr, serverlen);
-            if (commandTransfer < 0)
-                error("CommandTransfer ERROR in sendto");
+        serverlen = sizeof(serveraddr);
 
-            /*file name */
-            fileNameTransfer = sendto(sockfd, fileName, strlen(fileName)+1, 0, &serveraddr, serverlen);
-            if(fileNameTransfer < 0)
-            error("FileNameTransfer ERROR in sendto");
+        sendToBytes = sendto(sockfd, buf, strlen(buf), 0,
+                             &serveraddr, serverlen);
+        /* create file path */
+        strcpy(path, creatFilePath(fileName));
 
-            /* print the server's reply */
-            commandTransfer = recvfrom(sockfd, command, strlen(command), 0, &serveraddr, &serverlen);
-            if (commandTransfer < 0)
-                error("CommandTransfer ERROR in recvfrom");
+        if (sendToBytes < 0)
+            error("ERROR in sendto client side");
 
-            printf("Server received the command: %s\n", command);
+        if (strcmp(command, "get") == 0) {
+            j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr,& serverlen);
+            if(j < 0)
+                error("ERROR in ack command");
+            s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
 
-            if(strcmp(command, "exit") == 0) {
-                free(parsedInput);
-            }
+            if(s < 0)
+                error("ERROR in ack file name");
 
-            fileNameTransfer = recvfrom(sockfd, fileName, strlen(fileName) + 1, 0, &serveraddr, &serverlen);
-            if(fileNameTransfer < 0)
-                error("FileNameTransfer ERROR in recvfro");
-//            if(strcmp((fileName, "cmd exit or ls") != 0 ) ||
-//                    (strcmp(fileName, "cmd exit or ls") != 0))
-            printf("Server received file name: %s\n", fileName);
+            printf("server received command: %s\n", command);
+            printf("server received file name: %s\n", fileName);
+/*get file size from client */
+            fileSizeReceiver = recvfrom(sockfd, &fileSize, sizeof(fileSize), 0, (struct sockaddr *) &serveraddr, &serverlen);
+            if (fileSizeReceiver < 0)
+                error("ERROR in recvfrom on server side for file size");
 
-            /* file */
+
             strcpy(path, creatFilePath(fileName));
-//            sendFile(fp, (char *) fileSourceBuffer, MAXBUFLEN);
-            FILE* fp = readFileToBuf(path, fileSourceBuffer, MAXBUFLEN);
-            int send_left = sizeof(fileSourceBuffer);
-            int send_rc;
-            while (send_rc < send_left )
-            {
-                send_rc += sendto(sockfd, fileSourceBuffer, send_left, 0,&serveraddr, serverlen);
-                if (send_rc < 0)
-                    error("Error in sendto");
-                send_left -= send_rc;
+            filePointer = fopen(path, "wb");
+            if (!filePointer)
+                error("ERROR in fopen on server side");
+
+            //file opened, so receive the file
+            bytesReceived = 0;
+            while (bytesReceived < fileSize) {
+                bzero(fileStorage, BUFSIZE);
+                fileStorage[strcspn(fileStorage, "\r\n")] = 0;
+                fileBufferBytes = recvfrom(sockfd, fileStorage, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
+                if (fileBufferBytes < 0)
+                    error("ERROR in recvfrom get on client side");
+                bytesReceived += fwrite(fileStorage, 1, fileBufferBytes, filePointer);
             }
-            if (fileTransfer < 0)
-                error("FileTransfer ERROR in sendto");
-            fclose(fp);
+            printf("Client Received %d\n bytes", bytesReceived);
+            fclose(filePointer);
+            s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
+            if(s < 0)
+                error("ERROR in ack file name");
+            printf("File received %s successfully\n", fileName);
+            bzero(command, BUFSIZE);
+            bzero(fileName, BUFSIZE);
+        }
+        if (strcmp(command, "put") == 0) {
+            /* ack the command and file name */
+            j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr,& serverlen);
+            if(j < 0)
+                error("ERROR in ack command");
+            s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
 
+            if(s < 0)
+                error("ERROR in ack file name");
 
+            printf("server received command: %s\n", command);
+            printf("server received file name: %s\n", fileName);
 
+            filePointer = fopen(path, "rb");
+
+            /*send file size to server */
+            if (!filePointer) {
+                fileSize = -1;
+                sendto(sockfd, &fileSize, sizeof(fileSize), 0, &serveraddr, serverlen);
+                error("ERROR in fopen put client side)");
+            }
+
+            // https://stackoverflow.com/questions/238603/how-can-i-get-a-files-size-in-c
+            fseek(filePointer, 0, SEEK_END);
+            fileSize = ftell(filePointer);
+            rewind(filePointer);
+
+            sendToBytes = sendto(sockfd, &fileSize, sizeof (fileSize), 0,
+                                 &serveraddr, serverlen);
+
+            if (sendToBytes < 0)
+                error("ERROR in sendto client");
+
+            bytesSent = 0;
+            while (bytesSent < fileSize) {
+                bzero(fileStorage, BUFSIZE);
+                bytesRead = fread(fileStorage, 1, BUFSIZE, filePointer);
+                if(bytesRead < 0)
+                    error("ERROR in fread put on client side");
+                sendToBytes = sendto(sockfd, fileStorage, bytesRead, 0,
+                                        (struct sockaddr*) &serveraddr, serverlen);
+                if (sendToBytes < 0)
+                    error("ERROR in sendto put on client side");
+                bytesSent = bytesSent + sendToBytes;
+
+            }
+            printf("Client Sent %d\n bytes", bytesSent);
+
+            fclose(filePointer);
+            s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
+            if(s < 0)
+                error("ERROR in ack file name");
+            printf("File received %s successfully\n", fileName);
+            bzero(fileStorage, BUFSIZE);
+            bzero(command, BUFSIZE);
+            bzero(fileName, BUFSIZE);
+
+        }
+//        https://www.tutorialkart.com/c-programming/c-delete-file/
+        if (strcmp(command, "delete") == 0) {
+            j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr,& serverlen);
+            if(j < 0)
+                error("ERROR in ack command");
+            s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
+
+            if(s < 0)
+                error("ERROR in ack file name");
+
+            printf("server received command: %s\n", command);
+            printf("server received file name: %s\n", fileName);
+
+            deleteIndicator = recvfrom(sockfd, deleteMessage, BUFSIZE, 0, &serveraddr, &serverlen);
+            if(deleteIndicator < 0){
+                error("ERROR in delete message");
+            }
+            printf("%s", deleteMessage);
+
+            bzero(command, BUFSIZE);
+            bzero(fileName, BUFSIZE);
+        }
+        //https://stackoverflow.com/questions/4204666/how-to-list-files-in-a-directory-in-a-c-program/17683417
+        if (strcmp(command, "ls") == 0) {
+            j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr,& serverlen);
+            if(j < 0)
+                error("ERROR in ack command");
+            printf("server received command: %s\n", command);
+
+            lsDirReceiver = recvfrom(sockfd, lsString, BUFSIZE, 0, (struct sockaddr *) &serveraddr, & serverlen);
+            if(lsDirReceiver < 0)
+                error("ERROR in ack command");
+
+            printf("server printed directory: %s\n", lsString);
+
+            bzero(command, BUFSIZE);
+            bzero(fileName, BUFSIZE);
+            bzero(lsString, BUFSIZE);
+
+        }
+        if (strcmp(command, "exit") == 0) {
+            printf("INFO: Server is exiting\n");
+            bzero(command, BUFSIZE);
+            bzero(fileName, BUFSIZE);
+            exit(0);
+
+        }
     }
 }
-
-/* This function builds the path to open file */
-const char * creatFilePath(char *const *fileName) {
-    char* TARGETDIR = "./client/";
-    char tempPath[100];
-    strcpy(tempPath, TARGETDIR);
-    strcat(tempPath, fileName);
-    return tempPath;
-}
-
 
 #pragma clang diagnostic pop
