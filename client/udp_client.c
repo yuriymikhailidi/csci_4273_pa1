@@ -2,6 +2,8 @@
  * udpclient.c - A simple UDP client
  * usage: udpclient <host> <port>
  */
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "EndlessLoop"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,7 +42,7 @@ int main(int argc, char **argv) {
     struct hostent *server;
     char *hostname;
     char buf[BUFSIZE], command[BUFSIZE], fileName[BUFSIZE],
-                path[BUFSIZE], fileStorage[BUFSIZE], lsString[BUFSIZE], deleteMessage[BUFSIZE];
+                path[BUFSIZE], fileStorage[BUFSIZE], lsString[BUFSIZE], deleteMessage[BUFSIZE], exitMessage[BUFSIZE];
     FILE *filePointer = NULL;
     size_t  fileSize;
 
@@ -124,7 +126,7 @@ int main(int argc, char **argv) {
                     error("ERROR in recvfrom get on client side");
                 bytesReceived += fwrite(fileStorage, 1, fileBufferBytes, filePointer);
             }
-            printf("Client Received %d\n bytes", bytesReceived);
+            printf("Client Received %d bytes \n", bytesReceived);
             fclose(filePointer);
             s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
             if(s < 0)
@@ -179,7 +181,7 @@ int main(int argc, char **argv) {
                 bytesSent = bytesSent + sendToBytes;
 
             }
-            printf("Client Sent %d\n bytes", bytesSent);
+            printf("Client Sent %d bytes\n", bytesSent);
 
             fclose(filePointer);
             s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
@@ -232,13 +234,16 @@ int main(int argc, char **argv) {
 
         }
         if (strcmp(command, "exit") == 0) {
-            printf("INFO: Server is exiting\n");
+            j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
+            if(j < 0)
+                error("ERROR in ack command");
+            printf("server received command: %s\n", command);
+
             bzero(command, BUFSIZE);
             bzero(fileName, BUFSIZE);
-            exit(0);
-
         }
     }
 }
 
+#pragma clang diagnostic pop
 #pragma clang diagnostic pop

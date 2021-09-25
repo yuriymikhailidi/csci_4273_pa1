@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
             if (!filePointer) {
                 fileSize = -1;
                 sendto(sockfd, &fileSize, sizeof(fileSize), 0, &clientaddr, clientlen);
-                error("ERROR in fopen put client side)");
+                error("ERROR in fopen put client side");
             }
 
             // https://stackoverflow.com/questions/238603/how-can-i-get-a-files-size-in-c
@@ -170,7 +170,7 @@ int main(int argc, char **argv) {
                 bytesSent = bytesSent + sendToBytes;
 
             }
-            printf("Server Sent %d\n bytes", bytesSent);
+            printf("Server Sent %d bytes \n", bytesSent);
             fclose(filePointer);
             k = sendto(sockfd, fileName, strlen(fileName), 0, &clientaddr, clientlen);
             if(k < 0)
@@ -183,10 +183,10 @@ int main(int argc, char **argv) {
         if (strcmp(command, "put") == 0) {
             /* ack the command and file name */
             j = sendto(sockfd, command, strlen(command), 0, &clientaddr, clientlen);
-            if(j < 0)
+            if (j < 0)
                 error("ERROR in send ack command");
             k = sendto(sockfd, fileName, strlen(fileName), 0, &clientaddr, clientlen);
-            if(k < 0)
+            if (k < 0)
                 error("ERROR in send ack file name");
 
             /*receive file size from client */
@@ -204,22 +204,24 @@ int main(int argc, char **argv) {
             bytesReceived = 0;
             while (bytesReceived < fileSize) {
                 bzero(fileStorage, BUFSIZE);
-                fileBufferBytes = recvfrom(sockfd, fileStorage, BUFSIZE, 0, (struct sockaddr *) &clientaddr, &clientlen);
+                fileBufferBytes = recvfrom(sockfd, fileStorage, BUFSIZE, 0, (struct sockaddr *) &clientaddr,
+                                           &clientlen);
                 if (fileBufferBytes < 0)
                     error("ERROR in recvfrom put on server side");
                 bytesReceived += fwrite(fileStorage, 1, fileBufferBytes, filePointer);
             }
 
-            printf("Server Received %d\n bytes", bytesReceived);
+            printf("Server Received %d bytes\n", bytesReceived);
 
             fclose(filePointer);
             k = sendto(sockfd, fileName, strlen(fileName), 0, &clientaddr, clientlen);
-            if(k < 0)
+            if (k < 0)
                 error("ERROR in send ack file name");
             bzero(command, BUFSIZE);
             bzero(fileName, BUFSIZE);
 
         }
+        //        https://www.tutorialkart.com/c-programming/c-delete-file/
         if (strcmp(command, "delete") == 0) {
             j = sendto(sockfd, command, strlen(command), 0,
                                         &clientaddr, clientlen);
@@ -238,7 +240,6 @@ int main(int argc, char **argv) {
             bzero(command, BUFSIZE);
             bzero(fileName, BUFSIZE);
         }
-//        https://www.tutorialkart.com/c-programming/c-delete-file/
         if (strcmp(command, "ls") == 0) {
             j = sendto(sockfd, command, strlen(command), 0,
                                         &clientaddr, clientlen);
@@ -263,9 +264,14 @@ int main(int argc, char **argv) {
             bzero(fileName, BUFSIZE);
         }
         if (strcmp(command, "exit") == 0) {
-            printf("INFO: Server is exiting\n");
-            exit(0);
+            j = sendto(sockfd, command, strlen(command), 0, &clientaddr, clientlen);
+            if (j < 0)
+                error("ERROR in send ack command");
 
+            bzero(command, BUFSIZE);
+            bzero(fileName, BUFSIZE);
+            printf("Server is exiting\n");
+            exit(0);
         }
     }
 }
