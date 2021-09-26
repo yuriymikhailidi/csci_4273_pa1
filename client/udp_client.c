@@ -1,9 +1,7 @@
-/* 
+/*
  * udpclient.c - A simple UDP client
  * usage: udpclient <host> <port>
  */
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "EndlessLoop"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,26 +10,16 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <errno.h>
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "EndlessLoop"
 #define BUFSIZE 1024
 
-/* 
+/*
  * error - wrapper for perror
  */
 void error(char *msg) {
     perror(msg);
     exit(0);
-}
-
-/* This function builds the path to open file */
-const char *creatFilePath(char *fileName) {
-    char *TARGETDIR = "./client/";
-    char tempPath[100];
-    strcpy(tempPath, TARGETDIR);
-    strcat(tempPath, fileName);
-    return tempPath;
 }
 
 int main(int argc, char **argv) {
@@ -41,9 +29,9 @@ int main(int argc, char **argv) {
     struct sockaddr_in serveraddr;
     struct hostent *server;
     char *hostname;
-    char buf[BUFSIZE], command[BUFSIZE], fileName[BUFSIZE],
-                path[BUFSIZE], fileStorage[BUFSIZE], lsString[BUFSIZE], deleteMessage[BUFSIZE], exitMessage[BUFSIZE];
-    FILE *filePointer = NULL;
+    char command[BUFSIZE], fileName[BUFSIZE];
+    char buf[BUFSIZE],
+            fileStorage[BUFSIZE], lsString[BUFSIZE], deleteMessage[BUFSIZE], exitMessage[BUFSIZE];
     size_t  fileSize;
 
 
@@ -78,55 +66,55 @@ int main(int argc, char **argv) {
     while (1) {
         /* get a message from the user */
         bzero(buf, BUFSIZE);
+
         printf("Enter get <filename>, put <filename>, delete <filename>, ls or exit:");
         fgets(buf, BUFSIZE, stdin);
-        buf[strcspn(buf, "\r\n")] = 0;
-        sscanf(buf, "%s %s", command, fileName);
-
+        sscanf(buf, "%s %s", &command, &fileName);
         /* send the message to the server */
         serverlen = sizeof(serveraddr);
-
         sendToBytes = sendto(sockfd, buf, strlen(buf), 0,
                              &serveraddr, serverlen);
-        /* create file path */
-        strcpy(path, creatFilePath(fileName));
 
         if (sendToBytes < 0)
             error("ERROR in sendto client side");
 
         if (strcmp(command, "get") == 0) {
+            char path[] = "./client/";
             j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr,& serverlen);
             if(j < 0)
                 error("ERROR in ack command");
-            s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
 
+            s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
             if(s < 0)
                 error("ERROR in ack file name");
 
             printf("server received command: %s\n", command);
             printf("server received file name: %s\n", fileName);
-/*get file size from client */
+
+            /*get file size from server */
             fileSizeReceiver = recvfrom(sockfd, &fileSize, sizeof(fileSize), 0, (struct sockaddr *) &serveraddr, &serverlen);
             if (fileSizeReceiver < 0)
                 error("ERROR in recvfrom on server side for file size");
-
-
-            strcpy(path, creatFilePath(fileName));
-            filePointer = fopen(path, "wb");
+            strcat(path, fileName);
+            FILE*  filePointer = fopen(path, "wb");
             if (!filePointer)
-                error("ERROR in fopen on server side");
+                error("ERROR in fopen on client side");
 
             //file opened, so receive the file
             bytesReceived = 0;
             while (bytesReceived < fileSize) {
                 bzero(fileStorage, BUFSIZE);
-                fileStorage[strcspn(fileStorage, "\r\n")] = 0;
+                /* receive the buffer */
                 fileBufferBytes = recvfrom(sockfd, fileStorage, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
                 if (fileBufferBytes < 0)
                     error("ERROR in recvfrom get on client side");
+
+                /*write as many as received till fileSize*/
                 bytesReceived += fwrite(fileStorage, 1, fileBufferBytes, filePointer);
             }
             printf("Client Received %d bytes \n", bytesReceived);
+
+            /*ack the file name success */
             fclose(filePointer);
             s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
             if(s < 0)
@@ -135,8 +123,9 @@ int main(int argc, char **argv) {
             bzero(command, BUFSIZE);
             bzero(fileName, BUFSIZE);
         }
-        if (strcmp(command, "put") == 0) {
+        else if (strcmp(command, "put") == 0) {
             /* ack the command and file name */
+            char path[] = "./client/";
             j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr,& serverlen);
             if(j < 0)
                 error("ERROR in ack command");
@@ -147,21 +136,21 @@ int main(int argc, char **argv) {
 
             printf("server received command: %s\n", command);
             printf("server received file name: %s\n", fileName);
-
-            filePointer = fopen(path, "rb");
-
-            /*send file size to server */
-            if (!filePointer) {
-                fileSize = -1;
+            strcat(path, fileName);
+            FILE* filePointer = fopen(path, "rb");
+            /*check if file is open, transmit error */
+            if (filePointer == 0) {
+                fileSize = -99999;
                 sendto(sockfd, &fileSize, sizeof(fileSize), 0, &serveraddr, serverlen);
-                error("ERROR in fopen put client side)");
+                error("ERROR in fopen put client side");
             }
 
             // https://stackoverflow.com/questions/238603/how-can-i-get-a-files-size-in-c
             fseek(filePointer, 0, SEEK_END);
             fileSize = ftell(filePointer);
-            rewind(filePointer);
+            fseek(filePointer, 0, SEEK_SET);
 
+            /*send file size to server */
             sendToBytes = sendto(sockfd, &fileSize, sizeof (fileSize), 0,
                                  &serveraddr, serverlen);
 
@@ -170,20 +159,26 @@ int main(int argc, char **argv) {
 
             bytesSent = 0;
             while (bytesSent < fileSize) {
+                /*clear the buffer */
                 bzero(fileStorage, BUFSIZE);
+
+                /* read as many bytes as possible*/
                 bytesRead = fread(fileStorage, 1, BUFSIZE, filePointer);
                 if(bytesRead < 0)
                     error("ERROR in fread put on client side");
+
+                /*send as many as read */
                 sendToBytes = sendto(sockfd, fileStorage, bytesRead, 0,
-                                        (struct sockaddr*) &serveraddr, serverlen);
+                                     (struct sockaddr*) &serveraddr, serverlen);
                 if (sendToBytes < 0)
                     error("ERROR in sendto put on client side");
+                /* read bytes till file size */
                 bytesSent = bytesSent + sendToBytes;
 
             }
             printf("Client Sent %d bytes\n", bytesSent);
 
-            fclose(filePointer);
+            /*ack file name as success */
             s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
             if(s < 0)
                 error("ERROR in ack file name");
@@ -191,10 +186,11 @@ int main(int argc, char **argv) {
             bzero(fileStorage, BUFSIZE);
             bzero(command, BUFSIZE);
             bzero(fileName, BUFSIZE);
-
+            fclose(filePointer);
         }
 //        https://www.tutorialkart.com/c-programming/c-delete-file/
-        if (strcmp(command, "delete") == 0) {
+        else if (strcmp(command, "delete") == 0) {
+            char path[] = "./client/";
             j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr,& serverlen);
             if(j < 0)
                 error("ERROR in ack command");
@@ -206,44 +202,47 @@ int main(int argc, char **argv) {
             printf("server received command: %s\n", command);
             printf("server received file name: %s\n", fileName);
 
-            deleteIndicator = recvfrom(sockfd, deleteMessage, BUFSIZE, 0, &serveraddr, &serverlen);
-            if(deleteIndicator < 0){
-                error("ERROR in delete message");
-            }
-            printf("%s", deleteMessage);
+            s = recvfrom(sockfd, fileName, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
 
+            if(s < 0)
+                error("ERROR in ack file name");
+            printf("File %s deleted \n", fileName);
             bzero(command, BUFSIZE);
             bzero(fileName, BUFSIZE);
         }
-        //https://stackoverflow.com/questions/4204666/how-to-list-files-in-a-directory-in-a-c-program/17683417
-        if (strcmp(command, "ls") == 0) {
+            //https://stackoverflow.com/questions/4204666/how-to-list-files-in-a-directory-in-a-c-program/17683417
+        else if (strcmp(command, "ls") == 0) {
             j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr,& serverlen);
             if(j < 0)
                 error("ERROR in ack command");
             printf("server received command: %s\n", command);
-
-            lsDirReceiver = recvfrom(sockfd, lsString, BUFSIZE, 0, (struct sockaddr *) &serveraddr, & serverlen);
-            if(lsDirReceiver < 0)
-                error("ERROR in ack command");
-
-            printf("server printed directory: %s\n", lsString);
-
+            lsDirReceiver = recvfrom(sockfd, lsString, BUFSIZE, 0, &serveraddr, &serverlen);
+            if(lsDirReceiver < 0){
+                error("ERROR in delete message");
+            }
+            printf("Directory: %s\n", lsString);
             bzero(command, BUFSIZE);
             bzero(fileName, BUFSIZE);
             bzero(lsString, BUFSIZE);
-
         }
-        if (strcmp(command, "exit") == 0) {
+        else if (strcmp(command, "exit") == 0) {
             j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
             if(j < 0)
                 error("ERROR in ack command");
             printf("server received command: %s\n", command);
-
+            printf("Client is exiting\n");
+            bzero(command, BUFSIZE);
+            bzero(fileName, BUFSIZE);
+            exit(0);
+        } else {
+            /* recv ack of invalid command */
+            j = recvfrom(sockfd, command, BUFSIZE, 0, (struct sockaddr *) &serveraddr, &serverlen);
+            if(j < 0)
+                error("ERROR in ack command");
+            /* print the command back to user */
+            printf("command \"%s\" is invalid\n", command);
             bzero(command, BUFSIZE);
             bzero(fileName, BUFSIZE);
         }
     }
 }
-
-#pragma clang diagnostic pop
-#pragma clang diagnostic pop
